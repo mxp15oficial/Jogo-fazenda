@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador Case IH 9900 - Operação</title>
+    <style>
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: sans-serif;
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 { font-size: 1.2rem; color: #fbc02d; margin-bottom: 5px; text-align: center; }
+        .dashboard, .field-map {
+            background: #1e1e1e;
+            border: 2px solid #333;
+            border-radius: 8px;
+            padding: 15px;
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 15px;
+            box-sizing: border-box;
+        }
+        .status-box {
+            font-family: monospace;
+            background: #000;
+            color: #00ff66;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            min-height: 50px;
+            margin-bottom: 10px;
+        }
+        button {
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 10px;
+            margin: 5px 0;
+            width: 100%;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        button.active { background: #2e7d32; border-color: #4caf50; }
+        button.yellow-btn { background: #fbc02d; color: #000; border-color: #f57f17; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        canvas {
+            background: #2e5a27;
+            width: 100%;
+            height: 200px;
+            border-radius: 4px;
+            display: block;
+        }
+        .controls-row { display: flex; gap: 5px; }
+    </style>
+</head>
+<body>
+
+    <h1>Case IH 9900 - Painel AFS & Operação</h1>
+
+    <div class="dashboard">
+        <div class="status-box" id="statusLog">Sistema Desligado. Insira a chave.</div>
+        
+        <button id="btnChave" onclick="virarChave()">1. Dar Meia-Chave</button>
+        <button id="btnPartida" class="yellow-btn" onclick="darPartida()" disabled>3. Dar Partida (🟡)</button>
+        
+        <div class="controls-row">
+            <button id="btnPrimario" onclick="ligarSistema('primario')" disabled>Ind. Primário</button>
+            <button id="btnSecundario" onclick="ligarSistema('secundario')" disabled>Ext. Secundário</button>
+        </div>
+        
+        <div class="controls-row">
+            <button id="btnElevador" onclick="ligarSistema('elevador')" disabled>Elevador</button>
+            <button id="btnAutoTracker" onclick="ligarSistema('autotracker')" disabled>Auto Tracker</button>
+        </div>
+    </div>
+
+    <div class="field-map">
+        <div style="font-size: 0.9rem; margin-bottom: 5px; color: #fbc02d;">Talhão / Área de Colheita</div>
+        <canvas id="gameCanvas" width="370" height="200"></canvas>
+        <div class="controls-row" style="margin-top: 10px;">
+            <button onclick="moverColhedora('escala')">◀ Esquerda</button>
+            <button onclick="moverColhedora('avancar')">Avançar na Cana 🚜</button>
+            <button onclick="moverColhedora('direita')">Direita ▶</button>
+        </div>
+    </div>
+
+<script>
+    let estado = {
+        chave: false,
+        carregado: false,
+        motor: false,
+        primario: false,
+        secundario: false,
+        elevador: false,
+        autotracker: false,
+        posColhedoraX: 40,
+        colhendo: false
+    };
+
+    const log = document.getElementById("statusLog");
+
+    function atualizarLog(msg) {
+        log.innerText = `> ${msg}`;
+    }
+
+    function virarChave() {
+        estado.chave = true;
+        document.getElementById("btnChave").classList.add("active");
+        document.getElementById("btnChave").innerText = "Meia-Chave Ligada ✔";
+        atualizarLog("Painel energizado. Carregando módulos AFS...");
+        
+        setTimeout(() => {
+            estado.carregado = true;
+            document.getElementById("btnPartida").disabled = false;
+            atualizarLog("Sistema carregado. Pronto para partida.");
+        }, 1500);
+    }
+
+    function darPartida() {
+        if (!estado.carregado) return;
+        estado.motor = true;
+        document.getElementById("btnPartida").classList.add("active");
+        document.getElementById("btnPartida").innerText = "Motor Ligado (RPM Nominal)";
+        
+        // Habilitar comandos de implementos
+        document.getElementById("btnPrimario").disabled = false;
+        document.getElementById("btnSecundario").disabled = false;
+        document.getElementById("btnElevador").disabled = false;
+        document.getElementById("btnAutoTracker").disabled = false;
+        atualizarLog("Motor Case IH FPT cursor ativado. Ligue os implementos.");
+    }
+
+    function ligarSistema(sistema) {
+        if (!estado.motor) return;
+        estado[sistema] = !estado[sistema];
+        const btn = document.getElementById("btn" + sistema.charAt(0).toUpperCase() + sistema.slice(1));
+        
+        if (estado[sistema]) {
+            btn.classList.add("active");
+            atualizarLog(`${sistema.toUpperCase()} acionado com sucesso.`);
+        } else {
+            btn.classList.remove("active");
+            atualizarLog(`${sistema.toUpperCase()} desligado.`);
+        }
+    }
+
+    // Desenho do Mapa no Canvas
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    function desenharCena() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Desenhar linhas de cana (talhão)
+        ctx.strokeStyle = "#4e8c3b";
+        ctx.lineWidth = 4;
+        for (let i = 60; i < canvas.width; i += 50) {
+            ctx.beginPath();
+            ctx.moveTo(i, 0);
+            ctx.lineTo(i, canvas.height);
+            ctx.stroke();
+            
+            // Desenhar touceiras de cana
+            ctx.fillStyle = "#d4af37";
+            ctx.fillRect(i - 4, 30, 8, 15);
+            ctx.fillRect(i - 4, 90, 8, 15);
+            ctx.fillRect(i - 4, 150, 8, 15);
+        }
+
+        // Desenhar a Colhedora Case IH 9900
+        ctx.fillStyle = estado.motor ? (estado.colhendo ? "#ff5722" : "#d32f2f") : "#555";
+        ctx.fillRect(estado.posColhedoraX, 80, 35, 40); // Corpo da máquina
+        
+        // Divisor de linha / ponteiro frontal
+        ctx.fillStyle = "#ffeb3b";
+        ctx.fillRect(estado.posColhedoraX - 15, 92, 15, 16);
+
+        requestAnimationFrame(desenharCena);
+    }
+
+    function moverColhedora(direcao) {
+        if (!estado.motor) {
+            atualizarLog("ERRO: O motor precisa estar ligado para deslocar a máquina!");
+            return;
+        }
+        
+        if (direcao === 'avancar') {
+            estado.posColhedoraX += 15;
+            if (estado.posColhedoraX > canvas.width - 40) estado.posColhedoraX = canvas.width - 40;
+            
+            if (estado.primario && estado.elevador && estado.autotracker) {
+                estado.colhendo = true;
+                atualizarLog("Colhendo talhão de cana! Transbordo pronto para etapas futuras.");
+            } else {
+                estado.colhendo = false;
+                atualizarLog("Deslocando no talhão. Atenção: ligue o primário, elevador e Auto Tracker para cortar.");
+            }
+        } else if (direcao === 'escala') {
+            estado.posColhedoraX -= 10;
+            if (estado.posColhedoraX < 10) estado.posColhedoraX = 10;
+        } else if (direcao === 'direita') {
+            estado.posColhedoraX += 10;
+            if (estado.posColhedoraX > canvas.width - 40) estado.posColhedoraX = canvas.width - 40;
+        }
+    }
+
+    desenharCena();
+</script>
+
+</body>
+</html>
